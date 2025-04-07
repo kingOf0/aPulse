@@ -30,7 +30,8 @@ export default {
         to: "to1@mail.com, to2@mail.com",
         subject: "APulse SMTP",
         text: `APulse SMTP \${text}`, // plain text body, ${text} will be replaced with the text
-        html: "" // html body, ${text} will be replaced with the text
+        html: "", // html body, ${text} will be replaced with the text
+        skipRecursion: true // In case of fetch fail, won't send email repeatedly
     },
     twilio: { // optional, tokens to send notifications through twilio (SMS)
         accountSid: '',

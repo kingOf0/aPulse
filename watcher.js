@@ -45,7 +45,19 @@ const sendTelegramMessage = async (text) => {
     return await response.json();
 };
 
-const sendSMTPMessage = async (text) => {
+const sendSMTPMessage = async (text, siteId, endpointId) => {
+    if (config.smtp.skipRecursion) {
+        const status = JSON.parse((await fs.readFile(statusFile)).toString());
+        const site = status.sites[siteId];
+        const endpoint = site.endpoints[endpointId];
+        if (endpoint.logs.length > 0) {
+            const lastLog = endpoint.logs[endpoint.logs.length - 1];
+            if (lastLog.err) {
+                return;
+            }
+        }
+    }
+
     try {
         const transporter = nodemailer.createTransport({
             host: config.smtp.host,
@@ -138,20 +150,42 @@ const sendEmailMessage = async (text) => {
     }
     return await response.json();
 };
-const sendNotification = async (message) => {
+
+const sendNotification = async (message, siteId, endpointId) => {
     if (config.telegram?.botToken && config.telegram?.chatId)
         await sendTelegramMessage(message);
+
     if (config.slack?.botToken && config.slack?.channelId)
         await sendSlackMessage(message);
+
     if (config.discord?.webhookUrl)
         await sendDiscordMessage(message);
+
     if (config.smtp?.host && config.smtp?.port && config.smtp?.auth.user && config.smtp?.auth.pass && config.smtp?.to && config.smtp?.from)
-        await sendSMTPMessage(message);
+        await sendSMTPMessage(message, siteId, endpointId);
+
     if (config.twilio?.accountSid && config.twilio?.accountToken && config.twilio?.toNumber && config.twilio?.twilioNumber)
         await sendSMSMessage(message);
+
     if (config.sendgrid?.apiKey && config.sendgrid?.toEmail && config.sendgrid?.toFromEmail)
         await sendEmailMessage(message);
 }
+
+const checkSMTPNotification = async (siteId, endpointId) => {
+    if (!config.smtp.skipRecursion) {
+        return;
+    }
+
+    const status = JSON.parse((await fs.readFile(statusFile)).toString());
+    const site = status.sites[siteId];
+    const endpoint = site.endpoints[endpointId];
+    if (endpoint.logs.length > 0) {
+        const lastLog = endpoint.logs[endpoint.logs.length - 1];
+        if (lastLog.err) {
+            await sendSMTPMessage(`Site is active! site: ${siteId} endpoint: ${endpointId}`, siteId, endpointId);
+        }
+    }
+};
 
 while (true) {
     config.verbose && console.log('🔄 Pulse');
@@ -280,8 +314,12 @@ while (true) {
                                         `🔥 ERROR\n` +
                                         `${site.name || siteId} — ${endpoint.name || endpointId} [${endpointStatus.ttfb.toFixed(2)}ms]\n` +
                                         `→ ${endpointStatus.err}` +
-                                        (endpoint.link !== false ? `\n→ ${endpoint.link || endpoint.url}` : '')
+                                        (endpoint.link !== false ? `\n→ ${endpoint.link || endpoint.url}` : ''),
+                                        site.id,
+                                        endpoint.id,
                                     );
+                                } else {
+                                    checkSMTPNotification(site.id, endpoint.id)
                                 }
                             } catch (e) {
                                 console.error(e);
@@ -304,8 +342,12 @@ while (true) {
                                     sendNotification( // Don't await to prevent blocking/delaying next pulse
                                         `🟥 High Latency\n` +
                                         `${site.name || siteId} — ${endpoint.name || endpointId} [${endpointStatus.ttfb.toFixed(2)}ms]\n` +
-                                        (endpoint.link !== false ? `\n→ ${endpoint.link || endpoint.url}` : '')
+                                        (endpoint.link !== false ? `\n→ ${endpoint.link || endpoint.url}` : ''),
+                                        site.id,
+                                        endpoint.id
                                     );
+                                } else {
+                                    checkSMTPNotification(site.id, endpoint.id)
                                 }
                             } catch (e) {
                                 console.error(e);
