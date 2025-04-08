@@ -45,8 +45,8 @@ const sendTelegramMessage = async (text) => {
     return await response.json();
 };
 
-const sendSMTPMessage = async (text, siteId, endpointId) => {
-    if (config.smtp.skipRecursion) {
+const sendSMTPMessage = async (text, siteId, endpointId, skipCheck = false) => {
+    if (!skipCheck && config.smtp.skipRecursion) {
         const status = JSON.parse((await fs.readFile(statusFile)).toString());
         const site = status.sites[siteId];
         const endpoint = site.endpoints[endpointId];
@@ -172,6 +172,7 @@ const sendNotification = async (message, siteId, endpointId) => {
 }
 
 const checkSMTPNotification = async (siteId, endpointId) => {
+    console.log("SMTP Checking")
     if (!config.smtp.skipRecursion) {
         return;
     }
@@ -182,7 +183,7 @@ const checkSMTPNotification = async (siteId, endpointId) => {
     if (endpoint.logs.length > 0) {
         const lastLog = endpoint.logs[endpoint.logs.length - 1];
         if (lastLog.err) {
-            await sendSMTPMessage(`Site is active! site: ${siteId} endpoint: ${endpointId}`, siteId, endpointId);
+            await sendSMTPMessage(`Site is active again! after downtime of ${((Date.now() - lastLog.t) / 60_000)} mins. site: ${siteId} endpoint: ${endpointId}`, siteId, endpointId, true);
         }
     }
 };
@@ -318,8 +319,6 @@ while (true) {
                                         site.id,
                                         endpoint.id,
                                     );
-                                } else {
-                                    checkSMTPNotification(site.id, endpoint.id)
                                 }
                             } catch (e) {
                                 console.error(e);
